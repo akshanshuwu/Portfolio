@@ -1,8 +1,7 @@
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { Environment } from "@react-three/drei";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useLoading } from "../../context/LoadingProvider";
@@ -20,65 +19,61 @@ const SceneSetup = () => {
   return null;
 };
 
-// Create a simple fallback model if GLB fails to load
-const createFallbackModel = () => {
+// Create a procedural model that doesn't require external files
+const createProceduralModel = () => {
   const group = new THREE.Group();
   
-  // Create a simple sphere as fallback
-  const geometry = new THREE.SphereGeometry(1, 16, 16);
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x42aaff,
-    transparent: true,
-    opacity: 0.8
-  });
+  // Create a more interesting model with multiple shapes
+  const colors = [0x42aaff, 0x3388ff, 0x2266ee, 0x1144dd];
   
-  const sphere = new THREE.Mesh(geometry, material);
+  // Create a central sphere
+  const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+  const sphereMaterial = new THREE.MeshStandardMaterial({
+    color: colors[0],
+    transparent: true,
+    opacity: 0.9,
+    metalness: 0.3,
+    roughness: 0.5
+  });
+  const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
   group.add(sphere);
+  
+  // Add surrounding cylinders for visual interest
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const radius = 1.5;
+    
+    const cylinderGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 16);
+    const cylinderMaterial = new THREE.MeshStandardMaterial({
+      color: colors[i % colors.length],
+      transparent: true,
+      opacity: 0.7,
+      metalness: 0.2,
+      roughness: 0.6
+    });
+    
+    const cylinder = new THREE.Mesh(cylinderGeometry, cylinderMaterial);
+    cylinder.position.set(
+      Math.cos(angle) * radius,
+      Math.sin(angle) * 0.3,
+      Math.sin(angle) * radius
+    );
+    cylinder.rotation.set(Math.PI / 2, 0, angle);
+    group.add(cylinder);
+  }
   
   return group;
 };
 
 const LanfeustModel = () => {
   const ref = useRef<THREE.Group>(null);
-  const [model, setModel] = useState<THREE.Group | null>(null);
-  
-  useEffect(() => {
-    // Try to load the GLB model
-    const loader = new GLTFLoader();
-    
-    loader.load(
-      "/models/lanfeust.glb",
-      (gltf: any) => {
-        const scene = gltf.scene;
-        
-        // Set up the loaded model
-        scene.traverse((child: any) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            if (mesh.material) {
-              (mesh.material as THREE.Material).transparent = true;
-              (mesh.material as THREE.Material).needsUpdate = true;
-            }
-          }
-        });
-        
-        setModel(scene);
-      },
-      undefined,
-      (error: any) => {
-        console.error("Error loading GLB model:", error);
-        // Use fallback model if loading fails
-        setModel(createFallbackModel());
-      }
-    );
-  }, []);
+  // Create the model once using useMemo
+  const model = useMemo(() => createProceduralModel(), []);
 
   // Scroll Animation
   useEffect(() => {
     const el = ref.current;
-    if (!el || !model) return;
+    if (!el) return;
 
     const trigger = ScrollTrigger.create({
       id: "lanfeust-model",
@@ -112,13 +107,10 @@ const LanfeustModel = () => {
   }, [model]);
   
   useFrame((_state, delta) => {
-    if(ref.current && model) {
+    if(ref.current) {
         ref.current.rotation.y += delta * 0.2; // Slower idle rotation for better performance
     }
   });
-
-  // Only render if model is available
-  if (!model) return null;
 
   return (
     <primitive 
