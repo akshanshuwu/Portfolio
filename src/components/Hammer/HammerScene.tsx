@@ -1,7 +1,8 @@
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { Environment, useGLTF } from "@react-three/drei";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { Environment } from "@react-three/drei";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useLoading } from "../../context/LoadingProvider";
@@ -19,31 +20,65 @@ const SceneSetup = () => {
   return null;
 };
 
+// Create a simple fallback model if GLB fails to load
+const createFallbackModel = () => {
+  const group = new THREE.Group();
+  
+  // Create a simple sphere as fallback
+  const geometry = new THREE.SphereGeometry(1, 16, 16);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x42aaff,
+    transparent: true,
+    opacity: 0.8
+  });
+  
+  const sphere = new THREE.Mesh(geometry, material);
+  group.add(sphere);
+  
+  return group;
+};
+
 const LanfeustModel = () => {
   const ref = useRef<THREE.Group>(null);
+  const [model, setModel] = useState<THREE.Group | null>(null);
   
-  // Load model - error handled by React Three Fiber's built-in error handling
-  const { scene } = useGLTF("/models/lanfeust.glb");
-  
-  useLayoutEffect(() => {
-    scene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        // Enable transparency for fade effect
-        if (mesh.material) {
-          (mesh.material as THREE.Material).transparent = true;
-          (mesh.material as THREE.Material).needsUpdate = true;
-        }
+  useEffect(() => {
+    // Try to load the GLB model
+    const loader = new GLTFLoader();
+    
+    loader.load(
+      "/models/lanfeust.glb",
+      (gltf: any) => {
+        const scene = gltf.scene;
+        
+        // Set up the loaded model
+        scene.traverse((child: any) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            if (mesh.material) {
+              (mesh.material as THREE.Material).transparent = true;
+              (mesh.material as THREE.Material).needsUpdate = true;
+            }
+          }
+        });
+        
+        setModel(scene);
+      },
+      undefined,
+      (error: any) => {
+        console.error("Error loading GLB model:", error);
+        // Use fallback model if loading fails
+        setModel(createFallbackModel());
       }
-    });
-  }, [scene]);
+    );
+  }, []);
 
   // Scroll Animation
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !model) return;
 
     const trigger = ScrollTrigger.create({
       id: "lanfeust-model",
@@ -58,7 +93,7 @@ const LanfeustModel = () => {
         el.position.y = -2.5 - progress * 5; 
         
         // Fade out
-        scene.traverse((child) => {
+        model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
             const mat = mesh.material as THREE.MeshStandardMaterial;
@@ -74,18 +109,21 @@ const LanfeustModel = () => {
     return () => {
       trigger.kill();
     };
-  }, [scene]);
+  }, [model]);
   
   useFrame((_state, delta) => {
-    if(ref.current) {
+    if(ref.current && model) {
         ref.current.rotation.y += delta * 0.2; // Slower idle rotation for better performance
     }
   });
 
+  // Only render if model is available
+  if (!model) return null;
+
   return (
     <primitive 
         ref={ref}
-        object={scene} 
+        object={model} 
         scale={1.5} 
         position={[0, -2.5, 0]} 
         rotation={[0, Math.PI / 4, 0]}
